@@ -15,7 +15,6 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima.model import ARIMA
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import GRU, Dense
-import keras_tuner as kt
 
 st.set_page_config(page_title="RT-DETR + Traffic Forecasting", layout="wide")
 st.title("🚗 Pedestrian & Vehicle Tracker + Traffic Forecasting")
@@ -118,7 +117,11 @@ if uploaded_video:
         ax2.legend()
         st.pyplot(fig2)
 
+        # ---------------- GRU FORECASTING ----------------
+        st.subheader("GRU Model Forecast (Extended Horizon)")
         SEQ_LEN = 24
+        FORECAST_STEPS = 60  # forecast for 60 future seconds
+
         def create_sequences(data, seq_len):
             X, y = [], []
             for i in range(len(data) - seq_len):
@@ -136,11 +139,25 @@ if uploaded_video:
         model_gru.compile(optimizer='adam', loss='mse')
         model_gru.fit(X, y, epochs=20, batch_size=16, verbose=0)
 
+        # --- Extended Forecasting Loop ---
+        last_sequence = scaled[-SEQ_LEN:]
+        forecast_sequence = last_sequence.reshape(1, SEQ_LEN, 1)
+        forecast_gru = []
+
+        for _ in range(FORECAST_STEPS):
+            next_pred = model_gru.predict(forecast_sequence, verbose=0)
+            forecast_gru.append(next_pred[0])
+            forecast_sequence = np.append(forecast_sequence[:, 1:, :], [[next_pred]], axis=1)
+
+        forecast_gru_inv = scaler.inverse_transform(forecast_gru)
+        forecast_start = df.index[-1] + pd.Timedelta(seconds=1)
+        forecast_index = pd.date_range(start=forecast_start, periods=FORECAST_STEPS, freq='S')
+
+        st.subheader("GRU Model Evaluation on Training Data")
         y_pred_gru = model_gru.predict(X)
         y_actual_inv = scaler.inverse_transform(y)
         y_pred_gru_inv = scaler.inverse_transform(y_pred_gru)
 
-        st.subheader("GRU Model Evaluation")
         st.write(f"MAE: {mean_absolute_error(y_actual_inv, y_pred_gru_inv):.4f}")
         st.write(f"MSE: {mean_squared_error(y_actual_inv, y_pred_gru_inv):.4f}")
         st.write(f"R²: {r2_score(y_actual_inv, y_pred_gru_inv):.4f}")
@@ -148,8 +165,15 @@ if uploaded_video:
         fig3, ax3 = plt.subplots()
         ax3.plot(y_actual_inv[:, 0], label='Actual')
         ax3.plot(y_pred_gru_inv[:, 0], label='GRU Predicted')
-        ax3.set_title('GRU: Actual vs Predicted')
+        ax3.set_title('GRU: Actual vs Predicted (Training)')
         ax3.legend()
         st.pyplot(fig3)
+
+        fig4, ax4 = plt.subplots()
+        ax4.plot(df.index[-100:], vehicles[-100:], label='Recent Actual')
+        ax4.plot(forecast_index, forecast_gru_inv[:, 0], label='GRU Forecast', color='orange')
+        ax4.set_title(f'GRU Forecast: Next {FORECAST_STEPS} Seconds')
+        ax4.legend()
+        st.pyplot(fig4)
 else:
     st.warning("Please upload a video to proceed.")
