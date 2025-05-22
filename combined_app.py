@@ -120,7 +120,7 @@ if uploaded_video:
         # ---------------- GRU FORECASTING ----------------
         st.subheader("GRU Model Forecast (Extended Horizon)")
         SEQ_LEN = 24
-        FORECAST_STEPS = 60  # forecast for 60 future seconds
+        FORECAST_STEPS = 60  # forecast 60 steps into the future
 
         def create_sequences(data, seq_len):
             X, y = [], []
@@ -139,7 +139,7 @@ if uploaded_video:
         model_gru.compile(optimizer='adam', loss='mse')
         model_gru.fit(X, y, epochs=20, batch_size=16, verbose=0)
 
-        # --- Extended Forecasting Loop ---
+        # --- Extended Forecasting Loop (fixed) ---
         last_sequence = scaled[-SEQ_LEN:]
         forecast_sequence = last_sequence.reshape(1, SEQ_LEN, 1)
         forecast_gru = []
@@ -147,7 +147,7 @@ if uploaded_video:
         for _ in range(FORECAST_STEPS):
             next_pred = model_gru.predict(forecast_sequence, verbose=0)
             forecast_gru.append(next_pred[0])
-            forecast_sequence = np.append(forecast_sequence[:, 1:, :], [[next_pred]], axis=1)
+            forecast_sequence = np.concatenate([forecast_sequence[:, 1:, :], np.expand_dims(next_pred, axis=1)], axis=1)
 
         forecast_gru_inv = scaler.inverse_transform(forecast_gru)
         forecast_start = df.index[-1] + pd.Timedelta(seconds=1)
